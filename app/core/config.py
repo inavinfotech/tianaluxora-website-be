@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     INVENTORY_PORTAL_API_KEY: str = ""
     INVENTORY_PORTAL_API_SECRET: str = ""
 
+    ORDER_PORTAL_API_URL: str = "http://localhost:8003"
+    ORDER_PORTAL_API_KEY: str = ""
+    ORDER_PORTAL_API_SECRET: str = ""
+
     class Config:
         env_file = ".env"
 
