@@ -45,4 +45,26 @@ class UserService:
             response.raise_for_status()
             return response.json()
 
+    async def validate_token(self, token: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/external/validate-token",
+                headers={
+                    "X-API-KEY": settings.USER_PORTAL_API_KEY,
+                    "Authorization": f"Bearer {token}"
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_user_by_id(self, user_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/external/get-user",
+                headers=self.headers,
+                params={"user_id": user_id}
+            )
+            response.raise_for_status()
+            return response.json()
+
 user_service = UserService()

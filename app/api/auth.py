@@ -1,3 +1,4 @@
+from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -25,9 +26,8 @@ async def signup(user: UserSignup):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Signup failed")
 
+from app.api.deps import get_current_user
+
 @router.get("/me")
-async def get_me(email: str):
-    try:
-        return await user_service.get_me(email)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail="User not found")
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return current_user

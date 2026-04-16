@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     ORDER_PORTAL_API_KEY: str = ""
     ORDER_PORTAL_API_SECRET: str = ""
 
+    PAYMENT_PORTAL_API_URL: str = "http://localhost:8004"
+    PAYMENT_PORTAL_API_KEY: str = "tiana_web_key_12345" # Placeholder
+    PAYMENT_PORTAL_API_SECRET: str = "tiana_web_secret_67890" # Placeholder
+
     class Config:
         env_file = ".env"
 

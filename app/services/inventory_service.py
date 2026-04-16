@@ -38,4 +38,32 @@ class InventoryService:
             response.raise_for_status()
             return response.json()
 
+    async def reserve_stock(self, product_id: int, quantity: int) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/inventory/reserve",
+                headers=self.headers,
+                json={"product_id": product_id, "quantity": quantity}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def confirm_reservation(self, reservation_id: int) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/inventory/confirm/{reservation_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def release_reservation(self, reservation_id: int) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/inventory/release/{reservation_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+
 inventory_service = InventoryService()
