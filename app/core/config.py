@@ -1,5 +1,6 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
-from pydantic_settings import BaseSettings
+import logging
 
 class Settings(BaseSettings):
     USER_PORTAL_API_URL: str
@@ -18,7 +19,14 @@ class Settings(BaseSettings):
     PAYMENT_PORTAL_API_KEY: str
     PAYMENT_PORTAL_API_SECRET: str
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8', extra="ignore")
+
+    def __init__(self, **values):
+        super().__init__(**values)
+        logger = logging.getLogger("uvicorn.error")
+        if not os.path.exists(".env"):
+             logger.warning(f"CRITICAL: .env file NOT FOUND in website/backend current directory: {os.getcwd()}.")
+        else:
+             logger.info(f"Successfully loaded website configuration from {os.path.abspath('.env')}")
 
 settings = Settings()
