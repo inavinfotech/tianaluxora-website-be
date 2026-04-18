@@ -22,7 +22,17 @@ class InventoryService:
             
             # Enrich with frontend-specific fields
             for item in data.get("items", []):
-                item["image"] = "/images/small-bottle.webp" # Default image
+                # Use actual image from inventory if available
+                images = item.get("images", [])
+                if images and isinstance(images, list) and len(images) > 0:
+                    image_path = images[0]
+                    if image_path.startswith("/"):
+                        item["image"] = f"{settings.INVENTORY_PORTAL_BASE_URL}{image_path}"
+                    else:
+                        item["image"] = image_path
+                else:
+                    item["image"] = "/images/small-bottle.webp" # Default image
+                
                 item["tag"] = "New Arrival"
                 if isinstance(item["price"], (int, float)):
                     item["price"] = f"Rs {item['price']}"
@@ -36,7 +46,24 @@ class InventoryService:
                 headers=self.headers
             )
             response.raise_for_status()
-            return response.json()
+            item = response.json()
+            
+            # Enrich with frontend-specific fields
+            images = item.get("images", [])
+            if images and isinstance(images, list) and len(images) > 0:
+                image_path = images[0]
+                if image_path.startswith("/"):
+                    item["image"] = f"{settings.INVENTORY_PORTAL_BASE_URL}{image_path}"
+                else:
+                    item["image"] = image_path
+            else:
+                item["image"] = "/images/small-bottle.webp" # Default image
+            
+            item["tag"] = "New Arrival"
+            if isinstance(item["price"], (int, float)):
+                item["price"] = f"Rs {item['price']}"
+                
+            return item
 
     async def reserve_stock(self, product_id: int, quantity: int) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
