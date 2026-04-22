@@ -67,4 +67,23 @@ class UserService:
             response.raise_for_status()
             return response.json()
 
+    async def get_address(self, user_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/addresses/user/{user_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def save_address(self, user_id: str, address_data: Dict[str, Any]) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/addresses/user/{user_id}",
+                headers=self.headers,
+                json=address_data
+            )
+            response.raise_for_status()
+            return response.json()
+
 user_service = UserService()

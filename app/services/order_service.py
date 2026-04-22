@@ -12,13 +12,19 @@ class OrderService:
 
     async def create_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/orders/",
-                headers=self.headers,
-                json=order_data
-            )
-            response.raise_for_status()
-            return response.json()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/orders/",
+                    headers=self.headers,
+                    json=order_data
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                import logging
+                logger = logging.getLogger("uvicorn.error")
+                logger.error(f"Order Creation Failed in OMS ({e.response.status_code}): {e.response.text}")
+                raise
 
     async def get_orders(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         async with httpx.AsyncClient() as client:

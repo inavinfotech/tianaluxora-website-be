@@ -34,8 +34,16 @@ class InventoryService:
                     item["image"] = "/images/small-bottle.webp" # Default image
                 
                 item["tag"] = "New Arrival"
-                if isinstance(item["price"], (int, float)):
-                    item["price"] = f"Rs {item['price']}"
+                
+                # Map variants to sizes for the frontend
+                variants = item.get("variants", [])
+                if isinstance(variants, str):
+                    import json
+                    variants = json.loads(variants)
+                
+                if variants:
+                    item["sizes"] = [v.get("weight") for v in variants if v.get("weight")]
+                    item["real_variants"] = variants
             
             return data
 
@@ -60,8 +68,17 @@ class InventoryService:
                 item["image"] = "/images/small-bottle.webp" # Default image
             
             item["tag"] = "New Arrival"
-            if isinstance(item["price"], (int, float)):
-                item["price"] = f"Rs {item['price']}"
+            
+            # Map variants to sizes for the frontend if they exist
+            variants = item.get("variants", [])
+            if isinstance(variants, str):
+                import json
+                variants = json.loads(variants)
+            
+            if variants:
+                item["sizes"] = [v.get("weight") for v in variants if v.get("weight")]
+                # Store variants for frontend use
+                item["real_variants"] = variants
                 
             return item
 

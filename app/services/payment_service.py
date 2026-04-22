@@ -6,7 +6,7 @@ logger = logging.getLogger("tiana-bff")
 
 class PaymentService:
     def __init__(self):
-        self.base_url = f"{settings.PAYMENT_PORTAL_API_URL}/api/v1/payments"
+        self.base_url = f"{settings.PAYMENT_PORTAL_API_URL}/payments"
         self.api_key = settings.PAYMENT_PORTAL_API_KEY
         self.api_secret = settings.PAYMENT_PORTAL_API_SECRET
 
@@ -20,8 +20,8 @@ class PaymentService:
                 response = await client.post(
                     f"{self.base_url}/create-order",
                     headers={
-                        "X-API-KEY": self.api_key,
-                        "X-API-SECRET": self.api_secret
+                        "X-APP-KEY": self.api_key,
+                        "X-APP-SECRET": self.api_secret
                     },
                     json={
                         "amount": amount,
@@ -47,6 +47,10 @@ class PaymentService:
             try:
                 response = await client.post(
                     f"{self.base_url}/verify-payment",
+                    headers={
+                        "X-APP-KEY": self.api_key,
+                        "X-APP-SECRET": self.api_secret
+                    },
                     json={
                         "razorpay_order_id": razorpay_order_id,
                         "razorpay_payment_id": razorpay_payment_id,
@@ -55,8 +59,11 @@ class PaymentService:
                 )
                 response.raise_for_status()
                 return response.json()
-            except Exception as e:
-                logger.error(f"Payment Verification Error: {e}")
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Payment Verification Portal Error ({e.response.status_code}): {e.response.text}")
                 raise
+            except Exception as e:
+                logger.error(f"Payment Verification Connection Error: {e}")
+                raise 
 
 payment_service = PaymentService()
