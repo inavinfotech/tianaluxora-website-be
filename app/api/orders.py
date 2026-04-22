@@ -31,10 +31,11 @@ async def checkout(order_data: Dict[str, Any], current_user: Dict[str, Any] = De
         # 1. Reserve Stock
         for item in items:
             product_id = item.get("product_id") or item.get("id")
+            variant_id = item.get("variant_id")
             if not product_id:
                 raise ValueError("Missing product_id for item")
             
-            res = await inventory_service.reserve_stock(product_id, item["quantity"])
+            res = await inventory_service.reserve_stock(product_id, item["quantity"], variant_id)
             reservation_ids.append(res["id"])
             
         # 2. Initiate Payment (using a temporary reference)
@@ -51,6 +52,10 @@ async def checkout(order_data: Dict[str, Any], current_user: Dict[str, Any] = De
         }
         
     except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        logger.error(f"Checkout failed: {str(e)}", exc_info=True)
+        
         for res_id in reservation_ids:
             try: await inventory_service.release_reservation(res_id)
             except: pass

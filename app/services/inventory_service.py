@@ -82,12 +82,12 @@ class InventoryService:
                 
             return item
 
-    async def reserve_stock(self, product_id: int, quantity: int) -> Dict[str, Any]:
+    async def reserve_stock(self, product_id: int, quantity: int, variant_id: Optional[int] = None) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.base_url}/inventory/reserve",
                 headers=self.headers,
-                json={"product_id": product_id, "quantity": quantity}
+                json={"product_id": product_id, "quantity": quantity, "variant_id": variant_id}
             )
             response.raise_for_status()
             return response.json()
