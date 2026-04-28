@@ -119,11 +119,13 @@ async def list_orders(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
-        # For now, we fetch all orders, but we should probably filter by user_id
-        # The OMS service get_orders doesn't support user_id filter yet in its params
-        # But we can pass it if we update the service
-        return await order_service.get_orders(skip, limit)
+        # Filter orders by the authenticated user's ID
+        user_id = str(current_user.get("user_id") or current_user.get("id"))
+        return await order_service.get_orders(skip, limit, user_id=user_id)
     except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        logger.error(f"Failed to fetch orders for user {current_user.get('user_id')}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch orders: {str(e)}")
 
 @router.get("/{order_id}")

@@ -1,6 +1,7 @@
 import httpx
 from app.core.config import settings
 from typing import Dict, Any, Optional
+from app.core.http_client import get_async_client
 
 class UserService:
     def __init__(self):
@@ -11,7 +12,7 @@ class UserService:
         }
 
     async def login(self, username: str, password: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/external/login",
                 headers={"X-API-KEY": settings.USER_PORTAL_API_KEY},
@@ -21,7 +22,7 @@ class UserService:
             return response.json()
 
     async def signup(self, email: str, password: str, full_name: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/external/create-user",
                 headers=self.headers,
@@ -36,7 +37,7 @@ class UserService:
             return response.json()
 
     async def get_me(self, email: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/external/get-user",
                 headers=self.headers,
@@ -46,7 +47,7 @@ class UserService:
             return response.json()
 
     async def validate_token(self, token: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/external/validate-token",
                 headers={
@@ -58,7 +59,7 @@ class UserService:
             return response.json()
 
     async def get_user_by_id(self, user_id: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/external/get-user",
                 headers=self.headers,
@@ -68,7 +69,7 @@ class UserService:
             return response.json()
 
     async def get_address(self, user_id: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/addresses/user/{user_id}",
                 headers=self.headers
@@ -77,11 +78,22 @@ class UserService:
             return response.json()
 
     async def save_address(self, user_id: str, address_data: Dict[str, Any]) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/addresses/user/{user_id}",
                 headers=self.headers,
                 json=address_data
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        async with get_async_client() as client:
+            response = await client.put(
+                f"{self.base_url}/external/update-user",
+                headers=self.headers,
+                params={"user_id": user_id},
+                json=user_data
             )
             response.raise_for_status()
             return response.json()

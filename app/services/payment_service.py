@@ -1,6 +1,7 @@
 import httpx
 import logging
 from app.core.config import settings
+from app.core.http_client import get_async_client
 
 logger = logging.getLogger("tiana-bff")
 
@@ -15,7 +16,7 @@ class PaymentService:
         Creates a payment order in the Payment Portal (Razorpay Order).
         amount: In lowest currency unit (e.g. paisa for INR)
         """
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             try:
                 response = await client.post(
                     f"{self.base_url}/create-order",
@@ -43,7 +44,7 @@ class PaymentService:
         """
         Verifies the payment signature via the Payment Portal.
         """
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             try:
                 response = await client.post(
                     f"{self.base_url}/verify-payment",

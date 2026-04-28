@@ -1,6 +1,7 @@
 import httpx
 from app.core.config import settings
 from typing import List, Dict, Any, Optional
+from app.core.http_client import get_async_client
 
 class InventoryService:
     def __init__(self):
@@ -11,7 +12,7 @@ class InventoryService:
         }
 
     async def get_products(self, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/products/",
                 headers=self.headers,
@@ -48,7 +49,7 @@ class InventoryService:
             return data
 
     async def get_product(self, product_id: int) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.get(
                 f"{self.base_url}/products/{product_id}",
                 headers=self.headers
@@ -83,7 +84,7 @@ class InventoryService:
             return item
 
     async def reserve_stock(self, product_id: int, quantity: int, variant_id: Optional[int] = None) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/inventory/reserve",
                 headers=self.headers,
@@ -93,7 +94,7 @@ class InventoryService:
             return response.json()
 
     async def confirm_reservation(self, reservation_id: int) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/inventory/confirm/{reservation_id}",
                 headers=self.headers
@@ -102,7 +103,7 @@ class InventoryService:
             return response.json()
 
     async def release_reservation(self, reservation_id: int) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with get_async_client() as client:
             response = await client.post(
                 f"{self.base_url}/inventory/release/{reservation_id}",
                 headers=self.headers

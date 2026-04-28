@@ -24,3 +24,13 @@ async def save_my_address(
         return await user_service.save_address(current_user["user_id"], address_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/profile")
+async def save_my_profile(
+    profile_data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(deps.get_current_user)
+):
+    try:
+        return await user_service.update_user(current_user["user_id"], profile_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
