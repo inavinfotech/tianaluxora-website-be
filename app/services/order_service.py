@@ -1,71 +1,22 @@
-import httpx
-from app.core.config import settings
-from typing import List, Dict, Any, Optional
-from app.core.http_client import get_async_client
+"""
+Order service — orchestrates order creation and tracking through the order portal.
+"""
+from app.clients.order_client import order_client
+
 
 class OrderService:
-    def __init__(self):
-        self.base_url = settings.ORDER_PORTAL_API_URL
-        self.headers = {
-            "X-API-KEY": settings.ORDER_PORTAL_API_KEY,
-            "X-API-SECRET": settings.ORDER_PORTAL_API_SECRET
-        }
+    async def create_order(self, user_id: str, order_data: dict) -> dict:
+        """Create order in the OMS."""
+        order_data["user_id"] = user_id
+        return await order_client.create_order(order_data)
 
-    async def create_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            try:
-                # Sanitize variant_id to string to match OMS schema
-                if "items" in order_data:
-                    for item in order_data["items"]:
-                        if item.get("variant_id") is not None:
-                            item["variant_id"] = str(item["variant_id"])
-                        if item.get("product_id") is not None:
-                            item["product_id"] = str(item["product_id"])
+    async def get_orders(self, user_id: str, skip: int = 0, limit: int = 50) -> list:
+        """Fetch user's order history."""
+        return await order_client.get_orders(user_id=user_id, skip=skip, limit=limit)
 
-                response = await client.post(
-                    f"{self.base_url}/orders/",
-                    headers=self.headers,
-                    json=order_data
-                )
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                import logging
-                logger = logging.getLogger("uvicorn.error")
-                logger.error(f"Order Creation Failed in OMS ({e.response.status_code}): {e.response.text}")
-                raise
+    async def get_order(self, order_id: str) -> dict:
+        """Get a single order."""
+        return await order_client.get_order(order_id)
 
-    async def get_orders(self, skip: int = 0, limit: int = 100, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        async with get_async_client() as client:
-            params = {"skip": skip, "limit": limit}
-            if user_id:
-                params["user_id"] = user_id
-                
-            response = await client.get(
-                f"{self.base_url}/orders/",
-                headers=self.headers,
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
-
-    async def get_order(self, order_id: str) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.get(
-                f"{self.base_url}/orders/{order_id}",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
-
-    async def update_order(self, order_id: str, order_data: Dict[str, Any]) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.put(
-                f"{self.base_url}/orders/{order_id}",
-                headers=self.headers,
-                json=order_data
-            )
-            response.raise_for_status()
-            return response.json()
 
 order_service = OrderService()

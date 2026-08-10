@@ -1,68 +1,127 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+"""
+Order API routes — creates orders and fetches order history through the OMS portal.
+All order routes require authentication.
+"""
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, model_validator
+from typing import List, Optional, Any
 from app.services.order_service import order_service
 from app.services.payment_service import payment_service
-from typing import List, Dict, Any
+from app.middleware.auth import get_current_user
+from app.clients.base import ServiceError
+from app.clients.inventory_client import inventory_client
 
-router = APIRouter()
+logger = logging.getLogger("tiana-bff")
 
-from app.api.deps import get_current_user
-from app.services.inventory_service import inventory_service
+router = APIRouter(prefix="/orders", tags=["orders"])
 
-@router.post("/")
-async def create_order(order_data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
-    try:
-        # Override user_id with the authenticated user's ID
-        order_data["user_id"] = str(current_user["user_id"])
-        return await order_service.create_order(order_data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
+
+class OrderItem(BaseModel):
+    product_id: Any
+    variant_id: Optional[Any] = None
+    name: Optional[str] = "Product"
+    product_name: Optional[str] = None
+    quantity: int = 1
+    price: Optional[float] = 0.0
+    unit_price: Optional[float] = 0.0
+    image: Optional[str] = None
+    variant_name: Optional[str] = None
+    sku: Optional[str] = None
+
+    @model_validator(mode="after")
+    def sync_item_fields(self):
+        if self.product_name and (not self.name or self.name == "Product"):
+            self.name = self.product_name
+        elif self.name and not self.product_name:
+            self.product_name = self.name
+
+        if self.unit_price is not None and self.unit_price != 0.0 and (self.price is None or self.price == 0.0):
+            self.price = float(self.unit_price)
+        elif self.price is not None and self.price != 0.0 and (self.unit_price is None or self.unit_price == 0.0):
+            self.unit_price = float(self.price)
+
+        if self.price is None:
+            self.price = 0.0
+        if self.unit_price is None:
+            self.unit_price = 0.0
+
+        return self
+
+
+class OrderCreate(BaseModel):
+    items: List[OrderItem]
+    total_amount: float
+    currency: str = "INR"
+
+
+class CheckoutRequest(BaseModel):
+    items: List[OrderItem]
+    total_amount: float
+    currency: str = "INR"
+
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    reservation_ids: List[Any] = []
+    order_data: Optional[dict] = None
+
 
 @router.post("/checkout")
-async def checkout(order_data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+async def checkout(request: CheckoutRequest, user: dict = Depends(get_current_user)):
     """
     Step 1 of checkout flow:
     1. Validate and reserve stock
     2. Initiate payment session
     """
     reservation_ids = []
-    items = order_data.get("items", [])
-    
+
     try:
         # 1. Reserve Stock
-        for item in items:
-            product_id = item.get("product_id") or item.get("id")
-            variant_id = item.get("variant_id")
+        for item in request.items:
+            product_id = item.product_id
+            variant_id = item.variant_id
             if not product_id:
                 raise ValueError("Missing product_id for item")
-            
-            res = await inventory_service.reserve_stock(product_id, item["quantity"], variant_id)
+
+            res = await inventory_client.reserve_stock(product_id, item.quantity, variant_id)
             reservation_ids.append(res["id"])
-            
-        # 2. Initiate Payment (using a temporary reference)
+
+        # 2. Initiate Payment
         payment_order = await payment_service.create_payment_order(
-            order_id=f"PRE-{current_user['user_id']}", 
-            amount=int(order_data["total_amount"] * 100),
-            currency="INR",
-            user_id=str(current_user["user_id"])
+            user_id=user.get("sub"),
+            amount=int(request.total_amount * 100),
+            currency=request.currency,
+            metadata={"source": "tianaluxora-website"}
         )
-            
+
         return {
             "payment": payment_order,
             "reservation_ids": reservation_ids
         }
-        
-    except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn.error")
-        logger.error(f"Checkout failed: {str(e)}", exc_info=True)
-        
+
+    except ServiceError as e:
+        # Release any reservations made
         for res_id in reservation_ids:
-            try: await inventory_service.release_reservation(res_id)
-            except: pass
+            try:
+                await inventory_client.release_reservation(res_id)
+            except Exception:
+                pass
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        logger.error(f"Checkout failed: {str(e)}", exc_info=True)
+        for res_id in reservation_ids:
+            try:
+                await inventory_client.release_reservation(res_id)
+            except Exception:
+                pass
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.post("/verify-payment")
-async def verify_payment(data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+async def verify_payment(data: VerifyPaymentRequest, user: dict = Depends(get_current_user)):
     """
     Step 2 of checkout flow:
     1. Verify payment
@@ -71,73 +130,94 @@ async def verify_payment(data: Dict[str, Any], current_user: Dict[str, Any] = De
     """
     try:
         # 1. Verify Payment
-        try:
-            await payment_service.verify_payment(
-                razorpay_order_id=data["razorpay_order_id"],
-                razorpay_payment_id=data["razorpay_payment_id"],
-                razorpay_signature=data["razorpay_signature"]
-            )
-        except Exception as e:
-            # If payment service failed, we shouldn't proceed
-            import logging
-            logger = logging.getLogger("uvicorn.error")
-            logger.error(f"Payment verification failed: {str(e)}")
-            raise e
-        
+        await payment_service.verify_payment(
+            razorpay_order_id=data.razorpay_order_id,
+            razorpay_payment_id=data.razorpay_payment_id,
+            razorpay_signature=data.razorpay_signature
+        )
+
         # 2. Create Order in OMS
-        order_data = data.get("order_data")
+        order_data = data.order_data
         if not order_data:
             raise ValueError("Missing order_data for finalized order")
-            
-        order_data["user_id"] = str(current_user["user_id"])
+
+        # Sanitize item IDs to strings for OMS
+        if "items" in order_data:
+            for item in order_data["items"]:
+                if item.get("variant_id") is not None:
+                    item["variant_id"] = str(item["variant_id"])
+                if item.get("product_id") is not None:
+                    item["product_id"] = str(item["product_id"])
+
         order_data["status"] = "processing"
-        order = await order_service.create_order(order_data)
-        
+        order = await order_service.create_order(user.get("sub"), order_data)
+
         # 3. Confirm Reservations in Inventory
-        reservation_ids = data.get("reservation_ids", [])
-        for res_id in reservation_ids:
+        for res_id in data.reservation_ids:
             try:
-                await inventory_service.confirm_reservation(res_id)
+                await inventory_client.confirm_reservation(res_id)
             except Exception as e:
-                # Log error but don't fail here as payment is already taken
-                import logging
-                logger = logging.getLogger("uvicorn.error")
                 logger.error(f"Failed to confirm reservation {res_id}: {e}")
-        
+
         return {"status": "success", "order": order}
 
+    except ServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn.error")
         logger.error(f"Order verification failed: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Payment verification or order creation failed: {str(e)}")
 
-@router.get("/")
-async def list_orders(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, gt=0, le=100),
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
+
+@router.post("/")
+async def create_order(request: OrderCreate, user: dict = Depends(get_current_user)):
+    """Create a new order via the OMS portal."""
     try:
-        # Filter orders by the authenticated user's ID
-        user_id = str(current_user.get("user_id") or current_user.get("id"))
-        return await order_service.get_orders(skip, limit, user_id=user_id)
-    except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn.error")
-        logger.error(f"Failed to fetch orders for user {current_user.get('user_id')}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch orders: {str(e)}")
+        customer_name = user.get("name") or user.get("email") or "Customer"
+        first_product_name = request.items[0].name if request.items else "Unknown Product"
+        total_quantity = sum(item.quantity for item in request.items)
+
+        formatted_items = []
+        for item in request.items:
+            formatted_items.append({
+                "product_id": str(item.product_id),
+                "variant_id": str(item.variant_id) if item.variant_id is not None else None,
+                "variant_name": None,
+                "product_name": item.name,
+                "quantity": item.quantity,
+                "unit_price": float(item.price),
+                "image": item.image
+            })
+
+        order_data = {
+            "customer_name": customer_name,
+            "product_name": first_product_name,
+            "quantity": total_quantity,
+            "total_amount": float(request.total_amount),
+            "currency": request.currency,
+            "items": formatted_items,
+        }
+        return await order_service.create_order(user.get("sub"), order_data)
+    except ServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+
+@router.get("/")
+async def get_orders(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, gt=0, le=100),
+    user: dict = Depends(get_current_user),
+):
+    """Fetch user's order history from OMS portal."""
+    try:
+        return await order_service.get_orders(user.get("sub"), skip=skip, limit=limit)
+    except ServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
 
 @router.get("/{order_id}")
-async def get_order(order_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_order(order_id: str, user: dict = Depends(get_current_user)):
+    """Fetch single order detail."""
     try:
         return await order_service.get_order(order_id)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Order not found: {str(e)}")
-
-@router.put("/{order_id}")
-async def update_order(order_id: str, order_data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
-    try:
-        return await order_service.update_order(order_id, order_data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update order: {str(e)}")
+    except ServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)

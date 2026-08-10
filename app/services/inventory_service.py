@@ -1,114 +1,168 @@
-import httpx
-from app.core.config import settings
-from typing import List, Dict, Any, Optional
-from app.core.http_client import get_async_client
+"""
+Product service — fetches and aggregates product data from the inventory portal.
+Includes in-memory caching to reduce downstream load.
+"""
+from cachetools import TTLCache
+from app.clients.inventory_client import inventory_client
 
-class InventoryService:
-    def __init__(self):
-        self.base_url = settings.INVENTORY_PORTAL_API_URL
-        self.headers = {
-            "X-API-Key": settings.INVENTORY_PORTAL_API_KEY,
-            "X-API-Secret": settings.INVENTORY_PORTAL_API_SECRET
-        }
+# Cache products with 5s TTL to ensure real-time inventory stock synchronization
+_product_cache = TTLCache(maxsize=500, ttl=5)
 
-    async def get_products(self, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.get(
-                f"{self.base_url}/products/",
-                headers=self.headers,
-                params={"limit": limit, "offset": offset}
-            )
-            response.raise_for_status()
-            data = response.json()
+
+class ProductService:
+    def _transform_product(self, product: dict) -> dict:
+        """Enrich and normalize product data for frontend compatibility."""
+        if not product:
+            return product
+
+        if "variants" in product and "real_variants" not in product:
+            product["real_variants"] = product["variants"]
+
+        from app.core.config import settings
+        base_url = settings.INVENTORY_SERVICE_URL.replace("/api/v1", "").rstrip("/")
+
+        if "images" in product and isinstance(product["images"], list):
+            new_images = []
+            for img in product["images"]:
+                if img and img.startswith("/uploads/"):
+                    new_images.append(f"{base_url}{img}")
+                else:
+                    new_images.append(img)
+            product["images"] = new_images
+
+        # Also copy first image to 'image' field if not present
+        if "image" not in product and product.get("images"):
+            product["image"] = product["images"][0]
+
+        # Normalize variant images as well if they exist
+        if "real_variants" in product and isinstance(product["real_variants"], list):
+            for v in product["real_variants"]:
+                if "images" in v and isinstance(v["images"], list):
+                    new_v_images = []
+                    for img in v["images"]:
+                        if img and img.startswith("/uploads/"):
+                            new_v_images.append(f"{base_url}{img}")
+                        else:
+                            new_v_images.append(img)
+                    v["images"] = new_v_images
+                if "image" not in v and v.get("images"):
+                    v["image"] = v["images"][0]
+
+        # Fallback: if product has no cover image, use first variant image
+        has_prod_image = bool(product.get("image")) or (bool(product.get("images")) and len(product["images"]) > 0 and bool(product["images"][0]))
+        if not has_prod_image:
+            first_v_img = None
+            if "real_variants" in product and isinstance(product["real_variants"], list):
+                for v in product["real_variants"]:
+                    if v.get("images") and isinstance(v["images"], list) and len(v["images"]) > 0 and v["images"][0]:
+                        first_v_img = v["images"][0]
+                        break
+                    elif v.get("image"):
+                        first_v_img = v["image"]
+                        break
+            if first_v_img:
+                product["image"] = first_v_img
+                if not product.get("images") or len(product.get("images", [])) == 0:
+                    product["images"] = [first_v_img]
+
+        # Add tag for frontend
+        product.setdefault("tag", "New Arrival")
+
+        # Map variants to sizes/options for the frontend
+        variants = product.get("real_variants", []) or product.get("variants", [])
+        if isinstance(variants, list) and len(variants) > 0:
+            extracted_sizes = []
+            default_placeholders = ["50 ml", "100 ml", "250 ml", "500 ml"]
             
-            # Enrich with frontend-specific fields
-            for item in data.get("items", []):
-                # Use actual image from inventory if available
-                images = item.get("images", [])
-                if images and isinstance(images, list) and len(images) > 0:
-                    image_path = images[0]
-                    if image_path.startswith("/"):
-                        item["image"] = f"{settings.INVENTORY_PORTAL_BASE_URL}{image_path}"
+            for idx, v in enumerate(variants):
+                label = None
+                if isinstance(v, dict):
+                    # 1. Check dynamic attributes dictionary from inventory portal
+                    attrs = v.get("attributes")
+                    if isinstance(attrs, dict) and attrs:
+                        label = (
+                            attrs.get("Size") or
+                            attrs.get("size") or
+                            attrs.get("Volume") or
+                            attrs.get("volume") or
+                            attrs.get("Weight") or
+                            attrs.get("weight") or
+                            " / ".join([str(val) for val in attrs.values() if val and not (len(str(val)) > 20 or "INV-" in str(val))])
+                        )
+
+                    # 2. Check direct properties
+                    if not label:
+                        for key in ["weight", "size", "name", "title", "volume", "label"]:
+                            cand = v.get(key)
+                            if cand and isinstance(cand, str) and not (len(cand) > 20 or "INV-" in cand):
+                                label = cand
+                                break
+
+                    # 3. Fallback to clean size choice if candidate is empty or an ID
+                    if not label:
+                        label = default_placeholders[idx] if idx < len(default_placeholders) else f"Option {idx + 1}"
+
+                    v["weight"] = label
+                    v["size"] = label
+                    extracted_sizes.append(label)
+                elif isinstance(v, str):
+                    if not (len(v) > 20 or "INV-" in v):
+                        extracted_sizes.append(v)
                     else:
-                        item["image"] = image_path
-                else:
-                    item["image"] = "/images/small-bottle.webp" # Default image
-                
-                item["tag"] = "New Arrival"
-                
-                # Map variants to sizes for the frontend
-                variants = item.get("variants", [])
-                if isinstance(variants, str):
-                    import json
-                    variants = json.loads(variants)
-                
-                if variants:
-                    item["sizes"] = [v.get("weight") for v in variants if v.get("weight")]
-                    item["real_variants"] = variants
-            
-            return data
+                        extracted_sizes.append(default_placeholders[idx] if idx < len(default_placeholders) else f"Option {idx + 1}")
 
-    async def get_product(self, product_id: int) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.get(
-                f"{self.base_url}/products/{product_id}",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            item = response.json()
-            
-            # Enrich with frontend-specific fields
-            images = item.get("images", [])
-            if images and isinstance(images, list) and len(images) > 0:
-                image_path = images[0]
-                if image_path.startswith("/"):
-                    item["image"] = f"{settings.INVENTORY_PORTAL_BASE_URL}{image_path}"
-                else:
-                    item["image"] = image_path
-            else:
-                item["image"] = "/images/small-bottle.webp" # Default image
-            
-            item["tag"] = "New Arrival"
-            
-            # Map variants to sizes for the frontend if they exist
-            variants = item.get("variants", [])
-            if isinstance(variants, str):
-                import json
-                variants = json.loads(variants)
-            
-            if variants:
-                item["sizes"] = [v.get("weight") for v in variants if v.get("weight")]
-                # Store variants for frontend use
-                item["real_variants"] = variants
-                
-            return item
+            if extracted_sizes:
+                product["sizes"] = extracted_sizes
 
-    async def reserve_stock(self, product_id: int, quantity: int, variant_id: Optional[int] = None) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.post(
-                f"{self.base_url}/inventory/reserve",
-                headers=self.headers,
-                json={"product_id": product_id, "quantity": quantity, "variant_id": variant_id}
-            )
-            response.raise_for_status()
-            return response.json()
+        return product
 
-    async def confirm_reservation(self, reservation_id: int) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.post(
-                f"{self.base_url}/inventory/confirm/{reservation_id}",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
+    async def get_products(self, limit: int = 50, offset: int = 0) -> dict:
+        """Fetch paginated products from inventory portal (with cache)."""
+        cache_key = f"products:{limit}:{offset}"
+        if cache_key in _product_cache:
+            return _product_cache[cache_key]
 
-    async def release_reservation(self, reservation_id: int) -> Dict[str, Any]:
-        async with get_async_client() as client:
-            response = await client.post(
-                f"{self.base_url}/inventory/release/{reservation_id}",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
+        data = await inventory_client.get_products(limit=limit, offset=offset)
 
-inventory_service = InventoryService()
+        # Transform each product
+        if data and "items" in data:
+            data["items"] = [self._transform_product(p) for p in data["items"]]
+
+        _product_cache[cache_key] = data
+        return data
+
+    async def get_product(self, product_id: str) -> dict:
+        """Fetch single product with stock info."""
+        cache_key = f"product:{product_id}"
+        if cache_key in _product_cache:
+            return _product_cache[cache_key]
+
+        product = await inventory_client.get_product(product_id)
+
+        # Enrich with stock data
+        try:
+            stock = await inventory_client.get_stock(product_id)
+            product["stock_quantity"] = stock.get("quantity", 0)
+        except Exception:
+            product["stock_quantity"] = None
+
+        # Transform product
+        product = self._transform_product(product)
+
+        _product_cache[cache_key] = product
+        return product
+
+    async def search_products(self, query: str, limit: int = 50) -> list:
+        """Search products by name/description (client-side filter for now)."""
+        data = await self.get_products(limit=100, offset=0)
+        items = data.get("items", [])
+        q = query.lower()
+        return [
+            p for p in items
+            if q in p.get("name", "").lower()
+            or q in p.get("description", "").lower()
+            or q in p.get("sku", "").lower()
+        ]
+
+
+product_service = ProductService()
