@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Dict, Any, List
 from app.middleware.auth import require_admin
 from app.clients.inventory_client import inventory_client
+from app.services.inventory_service import product_service
 from app.clients.order_client import order_client
 from app.clients.user_portal_client import user_portal_client
 from app.clients.base import ServiceError
@@ -40,7 +41,7 @@ async def get_admin_stats():
 
     async def fetch_products():
         try:
-            return await inventory_client.get_products(limit=100)
+            return await product_service.get_products(limit=100)
         except Exception:
             return {}
 
@@ -151,7 +152,7 @@ async def list_admin_products(
 ):
     """Fetch all products with details for admin management."""
     try:
-        return await inventory_client.get_products(limit=limit, offset=offset)
+        return await product_service.get_products(limit=limit, offset=offset)
     except ServiceError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 

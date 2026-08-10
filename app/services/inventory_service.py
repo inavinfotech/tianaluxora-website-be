@@ -47,6 +47,16 @@ class ProductService:
                     v["images"] = new_v_images
                 if "image" not in v and v.get("images"):
                     v["image"] = v["images"][0]
+                
+                v_mrp = v.get("mrp") or product.get("mrp") or product.get("base_price")
+                v_price = v.get("price")
+                if v_mrp and v_price and float(v_mrp) > float(v_price):
+                    v["oldPrice"] = f"₹{int(v_mrp) if float(v_mrp).is_integer() else v_mrp}"
+                    pct = round((1 - float(v_price) / float(v_mrp)) * 100)
+                    v["discount"] = f"{pct}% OFF"
+                else:
+                    v["oldPrice"] = None
+                    v["discount"] = None
 
         # Fallback: if product has no cover image, use first variant image
         has_prod_image = bool(product.get("image")) or (bool(product.get("images")) and len(product["images"]) > 0 and bool(product["images"][0]))
@@ -64,6 +74,21 @@ class ProductService:
                 product["image"] = first_v_img
                 if not product.get("images") or len(product.get("images", [])) == 0:
                     product["images"] = [first_v_img]
+
+        # Calculate pricing fields
+        mrp = product.get("base_price") or product.get("price") or 0
+        discounted = product.get("discounted_price")
+        if discounted and float(discounted) > 0 and float(discounted) < float(mrp):
+            product["price"] = float(discounted)
+            product["mrp"] = float(mrp)
+            product["oldPrice"] = f"₹{int(mrp) if float(mrp).is_integer() else mrp}"
+            pct = round((1 - float(discounted) / float(mrp)) * 100)
+            product["discount"] = f"{pct}% OFF"
+        else:
+            product["price"] = float(mrp) if mrp else product.get("price")
+            product["mrp"] = float(mrp) if mrp else None
+            product["oldPrice"] = None
+            product["discount"] = None
 
         # Add tag for frontend
         product.setdefault("tag", "New Arrival")
