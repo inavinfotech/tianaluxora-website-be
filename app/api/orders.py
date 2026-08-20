@@ -11,6 +11,7 @@ from app.services.payment_service import payment_service
 from app.middleware.auth import get_current_user
 from app.clients.base import ServiceError
 from app.clients.inventory_client import inventory_client
+from app.clients.coupon_client import coupon_client
 
 logger = logging.getLogger("tiana-bff")
 
@@ -67,6 +68,8 @@ class VerifyPaymentRequest(BaseModel):
     razorpay_signature: str
     reservation_ids: List[Any] = []
     order_data: Optional[dict] = None
+    coupon_id: Optional[str] = None
+    coupon_code: Optional[str] = None
 
 
 @router.post("/checkout")
@@ -127,6 +130,7 @@ async def verify_payment(data: VerifyPaymentRequest, user: dict = Depends(get_cu
     1. Verify payment
     2. Create order (ONLY NOW)
     3. Confirm stock reservations
+    4. Claim coupon if applicable
     """
     try:
         # 1. Verify Payment
@@ -158,6 +162,19 @@ async def verify_payment(data: VerifyPaymentRequest, user: dict = Depends(get_cu
                 await inventory_client.confirm_reservation(res_id)
             except Exception as e:
                 logger.error(f"Failed to confirm reservation {res_id}: {e}")
+
+        # 4. Claim coupon in Coupon Portal if coupon_id was attached
+        coupon_id = data.coupon_id or order_data.get("coupon_id")
+        if coupon_id:
+            try:
+                await coupon_client.claim_coupon({
+                    "coupon_id": str(coupon_id),
+                    "user_id": user.get("sub"),
+                    "order_id": str(order.get("id") or order.get("_id") or ""),
+                    "payment_verified": True
+                })
+            except Exception as claim_err:
+                logger.error(f"Failed to claim coupon in coupon portal: {claim_err}", exc_info=True)
 
         return {"status": "success", "order": order}
 

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     INVENTORY_SERVICE_URL: str = "http://localhost:5002"
     ORDER_SERVICE_URL: str = "http://localhost:5003"
     PAYMENT_SERVICE_URL: str = "http://localhost:5001"
+    COUPON_SERVICE_URL: str = "http://localhost:5007"
 
     # ─── User Portal ───
     USER_PORTAL_URL: str = "http://localhost:5004"
@@ -35,6 +36,8 @@ class Settings(BaseSettings):
     PAYMENT_SERVICE_API_SECRET: str = ""
     ORDER_SERVICE_API_KEY: str = ""
     ORDER_SERVICE_API_SECRET: str = ""
+    COUPON_SERVICE_API_KEY: str = ""
+    COUPON_SERVICE_API_SECRET: str = ""
 
     # ─── CORS ───
     ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000", "*"]
@@ -77,6 +80,14 @@ class Settings(BaseSettings):
                 values["PAYMENT_SERVICE_API_KEY"] = values["PAYMENT_PORTAL_API_KEY"]
             if values.get("PAYMENT_PORTAL_API_SECRET") and not values.get("PAYMENT_SERVICE_API_SECRET"):
                 values["PAYMENT_SERVICE_API_SECRET"] = values["PAYMENT_PORTAL_API_SECRET"]
+
+            # Coupon Service
+            if values.get("COUPON_PORTAL_API_URL") and not values.get("COUPON_SERVICE_URL"):
+                values["COUPON_SERVICE_URL"] = values["COUPON_PORTAL_API_URL"]
+            if values.get("COUPON_PORTAL_API_KEY") and not values.get("COUPON_SERVICE_API_KEY"):
+                values["COUPON_SERVICE_API_KEY"] = values["COUPON_PORTAL_API_KEY"]
+            if values.get("COUPON_PORTAL_API_SECRET") and not values.get("COUPON_SERVICE_API_SECRET"):
+                values["COUPON_SERVICE_API_SECRET"] = values["COUPON_PORTAL_API_SECRET"]
 
         return values
 
