@@ -22,7 +22,7 @@ from app.clients.order_client import order_client
 from app.clients.payment_client import payment_client
 from app.clients.user_portal_client import user_portal_client
 from app.clients.coupon_client import coupon_client
-from app.api import auth, products, orders, payments, admin, coupons
+from app.api import auth, products, orders, payments, admin, coupons, webhooks
 
 # Configure logging
 logging.basicConfig(
@@ -89,6 +89,7 @@ app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(payments.router, prefix=settings.API_V1_STR)
 app.include_router(coupons.router, prefix=settings.API_V1_STR)
 app.include_router(admin.router, prefix=settings.API_V1_STR)
+app.include_router(webhooks.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
