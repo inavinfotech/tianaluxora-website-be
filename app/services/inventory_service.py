@@ -2,18 +2,19 @@
 Product service — fetches and aggregates product data from the inventory portal.
 Includes in-memory caching to reduce downstream load.
 """
+import asyncio
 from cachetools import TTLCache
 from app.clients.inventory_client import inventory_client
 
-# Cache products with 5s TTL to ensure real-time inventory stock synchronization
-_product_cache = TTLCache(maxsize=500, ttl=5)
+# Cache products with 60s TTL to optimize performance while maintaining inventory sync
+_product_cache = TTLCache(maxsize=500, ttl=60)
 
 
 class ProductService:
     def _transform_product(self, product: dict) -> dict:
         """Enrich and normalize product data for frontend compatibility."""
         if not product:
-            return product
+            return product 
 
         if "variants" in product and "real_variants" not in product:
             product["real_variants"] = product["variants"]
@@ -157,19 +158,26 @@ class ProductService:
         return data
 
     async def get_product(self, product_id: str) -> dict:
-        """Fetch single product with stock info."""
+        """Fetch single product with stock info concurrently."""
         cache_key = f"product:{product_id}"
         if cache_key in _product_cache:
             return _product_cache[cache_key]
 
-        product = await inventory_client.get_product(product_id)
+        # Fetch product and stock concurrently
+        results = await asyncio.gather(
+            inventory_client.get_product(product_id),
+            inventory_client.get_stock(product_id),
+            return_exceptions=True
+        )
 
-        # Enrich with stock data
-        try:
-            stock = await inventory_client.get_stock(product_id)
-            product["stock_quantity"] = stock.get("quantity", 0)
-        except Exception:
-            product["stock_quantity"] = None
+        product = results[0] if not isinstance(results[0], Exception) else {}
+        stock = results[1] if not isinstance(results[1], Exception) else {}
+
+        if not product:
+            if isinstance(results[0], Exception):
+                raise results[0]
+
+        product["stock_quantity"] = stock.get("quantity") if isinstance(stock, dict) else None
 
         # Transform product
         product = self._transform_product(product)

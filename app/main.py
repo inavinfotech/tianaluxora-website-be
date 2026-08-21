@@ -10,6 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -61,6 +62,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Structured request timing logger
 app.add_middleware(LoggingMiddleware)
+
+# GZip Compression Middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS configuration
 app.add_middleware(
