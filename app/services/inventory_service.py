@@ -174,8 +174,27 @@ class ProductService:
         stock = results[1] if not isinstance(results[1], Exception) else {}
 
         if not product:
+            # Check if product_id might be a variant_id of an existing product
+            try:
+                catalog = await self.get_products(limit=100)
+                items = catalog.get("items", [])
+                for p in items:
+                    v_list = p.get("real_variants") or p.get("variants") or []
+                    for v in v_list:
+                        if str(v.get("id")) == str(product_id) or str(v.get("variant_id")) == str(product_id) or str(v.get("sku")) == str(product_id):
+                            product = p.copy()
+                            product["matched_variant_id"] = str(product_id)
+                            break
+                    if product:
+                        break
+            except Exception:
+                pass
+
+        if not product:
             if isinstance(results[0], Exception):
                 raise results[0]
+            from app.clients.base import ServiceError
+            raise ServiceError(404, f"Product {product_id} not found", "InventoryService")
 
         product["stock_quantity"] = stock.get("quantity") if isinstance(stock, dict) else None
 
