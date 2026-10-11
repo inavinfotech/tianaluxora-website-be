@@ -213,7 +213,7 @@ async def get_admin_order(order_id: str):
                 user_info = await user_portal_client.get_user(order["user_id"])
                 if isinstance(user_info, dict):
                     order["customer_email"] = user_info.get("email", order.get("customer_email"))
-                    order["customer_phone"] = user_info.get("phone", order.get("customer_phone", "+91 98765 43210"))
+                    order["customer_phone"] = user_info.get("phone", order.get("customer_phone", ""))
                     order["customer_name"] = user_info.get("full_name", order.get("customer_name"))
                     order["shipping_address"] = user_info.get("address", order.get("shipping_address"))
             except Exception:
